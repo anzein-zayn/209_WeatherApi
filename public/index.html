@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pencari Lokasi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --laut:#0e3b43; --laut-gelap:#082a30; --kertas:#eef3ec; --garis:#b9cfc6;
+  --karang:#ff5d47; --lumut:#5b7f74; --teks:#12302f;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:"Bricolage Grotesque",system-ui,sans-serif;color:var(--teks);
+  background:var(--kertas);display:grid;place-items:center;padding:24px}
+main{width:min(880px,100%);display:grid;grid-template-columns:1.05fr 1fr;border-radius:28px;overflow:hidden;
+  box-shadow:0 30px 60px -30px rgba(8,42,48,.55)}
+.peta{background:var(--laut);color:#dff0ea;padding:28px;display:flex;flex-direction:column;gap:18px;position:relative}
+.peta h1{font-size:clamp(1.9rem,4vw,2.6rem);line-height:1;margin:0;font-weight:800;letter-spacing:-.02em}
+.peta p{margin:0;color:#9fc3b8;font-size:.95rem;max-width:30ch}
+svg{width:100%;height:auto;border-radius:16px;background:var(--laut-gelap)}
+svg .g{stroke:#1d5560;stroke-width:.5;fill:none}
+svg .eq{stroke:#2f7a86;stroke-width:.7}
+svg .cross{stroke:var(--karang);stroke-width:.6;stroke-dasharray:3 3}
+#pin{transition:transform .9s cubic-bezier(.2,.9,.25,1)}
+#pin circle.inti{fill:var(--karang)}
+#pin circle.ring{fill:none;stroke:var(--karang);stroke-width:1;transform-origin:center;animation:denyut 1.8s ease-out infinite}
+@keyframes denyut{from{r:3;opacity:1}to{r:14;opacity:0}}
+.kanan{background:var(--kertas);padding:28px;display:flex;flex-direction:column;gap:20px}
+form{display:flex;gap:8px}
+label{position:absolute;left:-9999px}
+input{flex:1;min-width:0;font:inherit;font-size:1.05rem;padding:14px 16px;border:2px solid var(--garis);border-radius:14px;background:#fff;color:var(--teks)}
+input:focus{outline:none;border-color:var(--laut)}
+button{font:inherit;font-weight:700;padding:0 20px;border:0;border-radius:14px;background:var(--karang);color:#fff;cursor:pointer}
+button:hover{background:#ec4a34}
+button:focus-visible,input:focus-visible{outline:3px solid var(--laut);outline-offset:2px}
+button:disabled{opacity:.6;cursor:wait}
+dl{margin:0;display:grid;gap:0}
+.baris{display:grid;grid-template-columns:110px 1fr;align-items:baseline;padding:13px 0;border-bottom:1px dashed var(--garis)}
+dt{color:var(--lumut);font-size:.95rem}
+dd{margin:0;font-size:1.25rem;font-weight:700;overflow-wrap:anywhere}
+dd.angka{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:1.1rem}
+#status{min-height:1.4em;font-size:.95rem;color:var(--lumut)}
+#status.error{color:#b4271a}
+.identitas{margin-top:auto;font-size:.85rem;color:var(--lumut)}
+@media (max-width:720px){main{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){#pin{transition:none}#pin circle.ring{animation:none}}
+</style>
+</head>
+<body>
+<main>
+  <section class="peta">
+    <h1>Di mana<br>tempat itu?</h1>
+    <p>Ketik nama tempat, lalu lihat posisinya di bumi.</p>
+    <svg id="peta" viewBox="0 0 360 180" role="img" aria-label="Posisi lokasi di peta dunia">
+      <g id="grid"></g>
+      <line class="cross" id="cx" x1="0" x2="360" y1="90" y2="90"/>
+      <line class="cross" id="cy" y1="0" y2="180" x1="180" x2="180"/>
+      <g id="pin" style="transform:translate(180px,90px)">
+        <circle class="ring" r="3"/><circle class="inti" r="3.5"/>
+      </g>
+    </svg>
+  </section>
+
+  <section class="kanan">
+    <form id="form">
+      <label for="q">Lokasi</label>
+      <input id="q" name="q" placeholder="Contoh: Yogyakarta" autocomplete="off" required>
+      <button type="submit" id="cari">Cari</button>
+    </form>
+    <div id="status" role="status" aria-live="polite">Masukkan nama lokasi untuk memulai.</div>
+
+    <dl>
+      <div class="baris"><dt>Lokasi</dt><dd id="lokasi">-</dd></div>
+      <div class="baris"><dt>Negara</dt><dd id="negara">-</dd></div>
+      <div class="baris"><dt>Provinsi</dt><dd id="provinsi">-</dd></div>
+      <div class="baris"><dt>Kecamatan</dt><dd id="kecamatan">-</dd></div>
+      <div class="baris"><dt>Longitude</dt><dd class="angka" id="longitude">-</dd></div>
+      <div class="baris"><dt>Latitude</dt><dd class="angka" id="latitude">-</dd></div>
+    </dl>
+
+    <div class="identitas">Nama: ZEIN &nbsp;|&nbsp; NIM: 20240140209</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+
+// Gambar garis bujur/lintang tiap 30 derajat
+(function gambarGrid(){
+  const g = $("grid");
+  const garis = (x1,y1,x2,y2,cls) => {
+    const l = document.createElementNS(NS,"line");
+    l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);
+    l.setAttribute("class",cls);g.appendChild(l);
+  };
+  for (let x=0;x<=360;x+=30) garis(x,0,x,180,x===180?"g eq":"g");
+  for (let y=0;y<=180;y+=30) garis(0,y,360,y,y===90?"g eq":"g");
+})();
+
+function geser(lon, lat){
+  const x = lon + 180, y = 90 - lat;
+  $("pin").style.transform = `translate(${x}px,${y}px)`;
+  $("cx").setAttribute("y1",y);$("cx").setAttribute("y2",y);
+  $("cy").setAttribute("x1",x);$("cy").setAttribute("x2",x);
+}
+
+function isi(data){
+  const v = (t) => t || "-";
+  $("lokasi").textContent = v(data.lokasi);
+  $("negara").textContent = v(data.negara);
+  $("provinsi").textContent = v(data.provinsi);
+  $("kecamatan").textContent = v(data.kecamatan);
+  $("longitude").textContent = Number(data.longitude).toFixed(6);
+  $("latitude").textContent = Number(data.latitude).toFixed(6);
+  geser(data.longitude, data.latitude);
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("q").value.trim();
+  if (!q) return;
+  const status = $("status"), tombol = $("cari");
+  status.className = ""; status.textContent = "Mencari...";
+  tombol.disabled = true;
+  try {
+    const res = await fetch("/api/lokasi?q=" + encodeURIComponent(q));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Terjadi kesalahan");
+    isi(data);
+    status.textContent = "Lokasi ditemukan.";
+  } catch (err) {
+    status.className = "error";
+    status.textContent = err.message + ". Coba nama lain.";
+  } finally {
+    tombol.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
